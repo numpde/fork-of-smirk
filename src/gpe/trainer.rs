@@ -409,7 +409,9 @@ impl GpeTrainer {
         }
 
         // Update Model
-        model.with_vocab_and_merges(vocab, merges);
+        model
+            .with_vocab_and_merges(vocab, merges)
+            .map_err(|e| format!("failed to apply vocab and merges: {e}"))?;
         Ok(self.special_tokens.clone())
     }
 }

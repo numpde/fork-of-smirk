@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::gpe::{GpeTrainer, GPE};
 use crate::pre_tokenizers::{split_structure, SmirkPreTokenizer};
+use crate::pyerr::{io_err, map_tok_err, runtime_err, type_err, value_err};
 use crate::wrapper::{ModelWrapper, PreTokenizerWrapper, TrainerWrapper};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -40,20 +41,20 @@ impl SmirkTokenizer {
     }
 }
 
-fn normalizer() -> normalizers::Sequence {
+fn normalizer() -> PyResult<normalizers::Sequence> {
     let steps: Vec<normalizers::NormalizerWrapper> = [
-        normalizers::Replace::new("++", "+2").unwrap().into(),
-        normalizers::Replace::new("--", "-2").unwrap().into(),
+        normalizers::Replace::new("++", "+2").map_err(|e| runtime_err("normalizer", e))?.into(),
+        normalizers::Replace::new("--", "-2").map_err(|e| runtime_err("normalizer", e))?.into(),
         normalizers::Strip::new(true, true).into(),
     ]
     .to_vec();
-    normalizers::Sequence::new(steps)
+    Ok(normalizers::Sequence::new(steps))
 }
 
 #[pymethods]
 impl SmirkTokenizer {
     #[new]
-    fn __new__() -> Self {
+    fn __new__() -> PyResult<Self> {
         let mut vocab: AHashMap<String, u32> = AHashMap::new();
         vocab.insert("[UNK]".to_string(), 0);
 
@@ -63,46 +64,51 @@ impl SmirkTokenizer {
                     .vocab(vocab)
                     .unk_token("[UNK]".to_string())
                     .build()
-                    .unwrap()
+                    .map_err(|e| runtime_err("__new__", e))?
                     .into(),
             )
             .with_pre_tokenizer(Some(SmirkPreTokenizer::default().into()))
-            .with_normalizer(Some(normalizer().into()))
+            .with_normalizer(Some(normalizer()?.into()))
             .with_decoder(Some(Fuse::default().into()))
             .build()
-            .unwrap();
+            .map_err(|e| runtime_err("__new__", e))?;
 
-        Self { tokenizer }
+        Ok(Self { tokenizer })
     }
 
     fn __getstate__(&self) -> PyResult<String> {
-        Ok(serde_json::to_string(&self.tokenizer).unwrap())
+        serde_json::to_string(&self.tokenizer)
+            .map_err(|e| value_err("__getstate__", e))
     }
 
-    fn __setstate__(&mut self, state: &str) {
-        self.tokenizer = serde_json::from_str(state).unwrap();
+    fn __setstate__(&mut self, state: &str) -> PyResult<()> {
+        self.tokenizer = serde_json::from_str(state).map_err(|e| value_err("__setstate__", e))?;
+        Ok(())
     }
 
     #[staticmethod]
-    fn from_vocab(file: &str) -> Self {
-        let model = WordLevel::from_file(file, "[UNK]".to_string()).unwrap();
+    fn from_vocab(file: &str) -> PyResult<Self> {
+        let model =
+            WordLevel::from_file(file, "[UNK]".to_string()).map_err(|e| map_tok_err("from_vocab", e))?;
         let tokenizer = TokenizerBuilder::new()
             .with_model(model.into())
             .with_pre_tokenizer(Some(SmirkPreTokenizer::default().into()))
-            .with_normalizer(Some(normalizer().into()))
+            .with_normalizer(Some(normalizer()?.into()))
             .with_decoder(Some(Fuse::new().into()))
             .build()
-            .unwrap();
-        SmirkTokenizer::new(tokenizer)
+            .map_err(|e| runtime_err("from_vocab", e))?;
+        Ok(SmirkTokenizer::new(tokenizer))
     }
 
     fn pretokenize(&self, smile: String) -> PyResult<Vec<String>> {
         let mut pretokenized = PreTokenizedString::from(smile);
-        let _ = self
+        let pretok = self
             .tokenizer
             .get_pre_tokenizer()
-            .unwrap()
-            .pre_tokenize(&mut pretokenized);
+            .ok_or_else(|| runtime_err("pretokenize", "Tokenizer has no pre_tokenizer"))?;
+        pretok
+            .pre_tokenize(&mut pretokenized)
+            .map_err(|e| runtime_err("pretokenize", e))?;
         let splits = pretokenized
             .get_splits(OffsetReferential::Original, OffsetType::Byte)
             .into_iter()
@@ -117,13 +123,15 @@ impl SmirkTokenizer {
         let encoding = self
             .tokenizer
             .encode_char_offsets(input, add_special_tokens)
-            .unwrap();
+            .map_err(|e| map_tok_err("encode", e))?;
         Ok(Encoding::from(encoding))
     }
 
     #[pyo3(signature = (ids, skip_special_tokens = true))]
     fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> PyResult<String> {
-        Ok(self.tokenizer.decode(&ids, skip_special_tokens).unwrap())
+        self.tokenizer
+            .decode(&ids, skip_special_tokens)
+            .map_err(|e| map_tok_err("decode", e))
     }
 
     #[pyo3(signature = (examples, add_special_tokens = true))]
@@ -141,12 +149,9 @@ impl SmirkTokenizer {
         let out = py.allow_threads(|| {
             self.tokenizer
                 .encode_batch_char_offsets(inputs, add_special_tokens)
-                .unwrap()
-                .into_iter()
-                .map(|e| Encoding::from(e))
-                .collect()
+                .map_err(|e| map_tok_err("encode_batch", e))
         });
-        Ok(out)
+        out.map(|encodings| encodings.into_iter().map(Encoding::from).collect())
     }
 
     #[pyo3(signature = (ids, skip_special_tokens = true))]
@@ -161,7 +166,7 @@ impl SmirkTokenizer {
             Ok(self
                 .tokenizer
                 .decode_batch(&sequences, skip_special_tokens)
-                .unwrap())
+                .map_err(|e| map_tok_err("decode_batch", e))?)
         })
     }
 
@@ -190,26 +195,35 @@ impl SmirkTokenizer {
             .single(template)
             .special_tokens(special_tokens)
             .build()
-            .unwrap();
+            .map_err(|e| runtime_err("set_post_processor", e))?;
         self.tokenizer.with_post_processor(Some(tp));
         Ok(())
     }
 
     #[pyo3(signature = (pretty = false))]
     fn to_str(&self, pretty: bool) -> PyResult<String> {
-        Ok(self.tokenizer.to_string(pretty).unwrap())
+        self.tokenizer
+            .to_string(pretty)
+            .map_err(|e| runtime_err("to_str", e))
     }
 
     #[pyo3(signature = (path, pretty = true))]
     fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
-        self.tokenizer.save(path, pretty).unwrap();
+        self.tokenizer.save(path, pretty).map_err(|e| {
+            if let Some(io) = e.downcast_ref::<std::io::Error>() {
+                io_err("save", std::io::Error::new(io.kind(), io.to_string()))
+            } else {
+                runtime_err("save", e)
+            }
+        })?;
         Ok(())
     }
 
     #[staticmethod]
     #[pyo3(text_signature = "(path)")]
     fn from_file(path: &str) -> PyResult<Self> {
-        Ok(Self::new(Tokenizer::from_file(path).unwrap()))
+        let tokenizer = Tokenizer::from_file(path).map_err(|e| map_tok_err("from_file", e))?;
+        Ok(Self::new(tokenizer))
     }
 
     #[pyo3(signature = (with_added_tokens=true))]
@@ -241,12 +255,14 @@ impl SmirkTokenizer {
     }
 
     #[pyo3(signature = (input, with_added_tokens=true))]
-    fn tokenize(&self, input: String, with_added_tokens: bool) -> Vec<String> {
-        self.tokenizer
-            .encode(input, with_added_tokens)
-            .unwrap()
-            .get_tokens()
-            .to_vec()
+    fn tokenize(&self, input: String, with_added_tokens: bool) -> PyResult<Vec<String>> {
+        Ok(
+            self.tokenizer
+                .encode(input, with_added_tokens)
+                .map_err(|e| map_tok_err("tokenize", e))?
+                .get_tokens()
+                .to_vec(),
+        )
     }
 
     fn id_to_token(&self, index: u32) -> Option<String> {
@@ -264,34 +280,44 @@ impl SmirkTokenizer {
     #[pyo3(signature = (**kwargs))]
     fn with_padding(&mut self, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
         let mut params = PaddingParams::default();
+        let mut unknown = Vec::new();
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs.iter() {
                 let key: &str = key.extract()?;
                 match key {
                     "direction" => {
-                        let value: &str = value.extract().unwrap();
+                        let value: &str = value.extract()?;
                         params.direction = match value {
                             "left" => Ok(PaddingDirection::Left),
                             "right" => Ok(PaddingDirection::Right),
-                            other => Err(PyValueError::new_err(format!(
-                                "Unknown direction {}",
-                                other
-                            ))),
+                            other => Err(value_err(
+                                "with_padding",
+                                format!("Unknown direction {other}"),
+                            )),
                         }?
                     }
-                    "pad_to_multiple_of" => params.pad_to_multiple_of = value.extract().unwrap(),
-                    "pad_id" => params.pad_id = value.extract().unwrap(),
-                    "pad_type_id" => params.pad_type_id = value.extract().unwrap(),
-                    "pad_token" => params.pad_token = value.extract().unwrap(),
+                    "pad_to_multiple_of" => params.pad_to_multiple_of = value.extract()?,
+                    "pad_id" => params.pad_id = value.extract()?,
+                    "pad_type_id" => params.pad_type_id = value.extract()?,
+                    "pad_token" => params.pad_token = value.extract()?,
                     "length" => {
-                        params.strategy = match value.extract().unwrap() {
+                        params.strategy = match value.extract()? {
                             Some(l) => PaddingStrategy::Fixed(l),
                             _ => PaddingStrategy::BatchLongest,
                         }
                     }
-                    _ => println!("Unknown kwargs {}, ignoring", key),
+                    _ => unknown.push(key.to_string()),
                 }
             }
+        }
+        if !unknown.is_empty() {
+            return Err(type_err(
+                "with_padding",
+                format!(
+                    "Unexpected keyword arguments: {} (allowed: direction, pad_to_multiple_of, pad_id, pad_type_id, pad_token, length)",
+                    unknown.join(", ")
+                ),
+            ));
         }
         self.tokenizer.with_padding(Some(params));
         Ok(())
@@ -300,38 +326,48 @@ impl SmirkTokenizer {
     #[pyo3(signature = (**kwargs))]
     fn with_truncation(&mut self, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
         let mut params = TruncationParams::default();
+        let mut unknown = Vec::new();
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs {
-                let key: &str = key.extract().unwrap();
+                let key: &str = key.extract()?;
                 match key {
                     "strategy" => {
-                        let value: &str = value.extract().unwrap();
+                        let value: &str = value.extract()?;
                         params.strategy = match value {
                             "only_first" => Ok(TruncationStrategy::OnlyFirst),
                             "only_second" => Ok(TruncationStrategy::OnlySecond),
                             "longest_first" => Ok(TruncationStrategy::LongestFirst),
-                            other => Err(PyValueError::new_err(format!(
-                                "Unknown truncation strategy {}",
-                                other
-                            ))),
+                            other => Err(value_err(
+                                "with_truncation",
+                                format!("Unknown truncation strategy {other}"),
+                            )),
                         }?
                     }
-                    "max_length" => params.max_length = value.extract().unwrap(),
-                    "stride" => params.stride = value.extract().unwrap(),
+                    "max_length" => params.max_length = value.extract()?,
+                    "stride" => params.stride = value.extract()?,
                     "direction" => {
-                        let value: &str = value.extract().unwrap();
+                        let value: &str = value.extract()?;
                         params.direction = match value {
                             "left" => Ok(TruncationDirection::Left),
                             "right" => Ok(TruncationDirection::Right),
-                            other => Err(PyValueError::new_err(format!(
-                                "Unknown truncation direction {}",
-                                other
-                            ))),
+                            other => Err(value_err(
+                                "with_truncation",
+                                format!("Unknown truncation direction {other}"),
+                            )),
                         }?
                     }
-                    _ => println!("Unknown kwargs {}, ignoring", key),
+                    _ => unknown.push(key.to_string()),
                 }
             }
+        }
+        if !unknown.is_empty() {
+            return Err(type_err(
+                "with_truncation",
+                format!(
+                    "Unexpected keyword arguments: {} (allowed: strategy, max_length, stride, direction)",
+                    unknown.join(", ")
+                ),
+            ));
         }
         let _ = self.tokenizer.with_truncation(Some(params));
         Ok(())
@@ -370,15 +406,14 @@ impl SmirkTokenizer {
         let model: ModelWrapper = match self.tokenizer.get_model() {
             ModelWrapper::ModelWrapper(mw) => match mw {
                 tokenizers::ModelWrapper::WordLevel(wl) => Ok(GPE::from(wl.to_owned())),
-                _ => Err(()),
+                _ => Err(runtime_err("train", "Unsupported model for training")),
             },
             ModelWrapper::GPE(gpe) => Ok(gpe.to_owned()),
-        }
-        .unwrap()
+        }?
         .into();
 
         // Remove any special tokens (i.e. [PAD]) from the initial vocab
-        let is_special = Regex::new(r"\[[A-Z]+?\]").unwrap();
+        let is_special = Regex::new(r"\[[A-Z]+?\]").map_err(|e| runtime_err("train", e))?;
         let alphabet: HashSet<String> = self
             .tokenizer
             .get_vocab(false)
@@ -396,28 +431,38 @@ impl SmirkTokenizer {
         let mut builder = GpeTrainer::builder();
         let mut opt_split_structure = false;
         builder.alphabet(alphabet);
+        let mut unknown = Vec::new();
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs.iter() {
-                let key: &str = key.extract().unwrap();
+                let key: &str = key.extract()?;
                 match key {
                     "min_frequency" => {
-                        builder.min_frequency(value.extract().unwrap());
+                        builder.min_frequency(value.extract()?);
                     }
                     "vocab_size" => {
-                        builder.vocab_size(value.extract().unwrap());
+                        builder.vocab_size(value.extract()?);
                     }
                     "limit_alphabet" => {
-                        builder.limit_alphabet(value.extract().unwrap());
+                        builder.limit_alphabet(value.extract()?);
                     }
                     "merge_brackets" => {
-                        builder.merge_brackets(value.extract().unwrap());
+                        builder.merge_brackets(value.extract()?);
                     }
                     "split_structure" => {
-                        opt_split_structure = value.extract().unwrap();
+                        opt_split_structure = value.extract()?;
                     }
-                    _ => println!("Unknown parameter {:?} ignoring", key),
+                    _ => unknown.push(key.to_string()),
                 }
             }
+        }
+        if !unknown.is_empty() {
+            return Err(type_err(
+                "train",
+                format!(
+                    "Unexpected keyword arguments: {} (allowed: min_frequency, vocab_size, limit_alphabet, merge_brackets, split_structure)",
+                    unknown.join(", ")
+                ),
+            ));
         }
 
         // Build the Smirk-GPE tokenizer
@@ -437,11 +482,20 @@ impl SmirkTokenizer {
             PreTokenizerWrapper,
             PostProcessorWrapper,
             DecoderWrapper,
-        > = tok_builder.build().unwrap();
+        > = tok_builder
+            .build()
+            .map_err(|e| runtime_err("train", e))?;
 
         // Train tokenizer
-        let mut trainer: TrainerWrapper = builder.build().unwrap().into();
-        let _ = py.allow_threads(|| tokenizer.train_from_files(&mut trainer, files).unwrap());
+        let mut trainer: TrainerWrapper = builder.build().map_err(|e| runtime_err("train", e))?.into();
+        let train_result = py.allow_threads(|| tokenizer.train_from_files(&mut trainer, files));
+        train_result.map_err(|e| {
+            if let Some(io) = e.downcast_ref::<std::io::Error>() {
+                io_err("train", std::io::Error::new(io.kind(), io.to_string()))
+            } else {
+                runtime_err("train", e)
+            }
+        })?;
         Ok(SmirkTokenizer::new(tokenizer))
     }
 }
