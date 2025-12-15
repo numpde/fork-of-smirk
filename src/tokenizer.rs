@@ -18,6 +18,8 @@ use tokenizers::{
     TokenizerImpl, TruncationDirection, TruncationParams, TruncationStrategy,
 };
 
+use ahash::AHashMap;
+
 type Tokenizer = TokenizerImpl<
     ModelWrapper,
     NormalizerWrapper,
@@ -52,9 +54,13 @@ fn normalizer() -> normalizers::Sequence {
 impl SmirkTokenizer {
     #[new]
     fn __new__() -> Self {
+        let mut vocab: AHashMap<String, u32> = AHashMap::new();
+        vocab.insert("[UNK]".to_string(), 0);
+
         let tokenizer: Tokenizer = TokenizerBuilder::new()
             .with_model(
                 WordLevel::builder()
+                    .vocab(vocab)
                     .unk_token("[UNK]".to_string())
                     .build()
                     .unwrap()
@@ -65,6 +71,7 @@ impl SmirkTokenizer {
             .with_decoder(Some(Fuse::default().into()))
             .build()
             .unwrap();
+
         Self { tokenizer }
     }
 
