@@ -17,6 +17,7 @@ name = "smirk"
 crate-type = ["cdylib"]
 
 [dependencies]
+ahash = "0.8"
 clap = "4.5.1"
 const_format = "0.2.32"
 derive_builder = "0.20.0"
