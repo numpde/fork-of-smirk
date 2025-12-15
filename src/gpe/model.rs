@@ -55,15 +55,8 @@ impl Default for GPE {
         let mut vocab: HashMap<String, u32> = HashMap::new();
         vocab.insert(unk_token.to_owned(), 0);
         let merge_offset = 1 + *vocab.values().max().unwrap_or(&0);
-        let vocab_r = match GPE::build_vocab_r(&vocab, &Vec::new(), merge_offset) {
-            Ok(v) => v,
-            Err(e) => {
-                // Building vocab_r from the static default vocab should never fail; fall back to
-                // an empty reverse vocab to avoid panicking in Python-facing code.
-                tracing::warn!("failed to build default vocab_r: {e}");
-                HashMap::new()
-            }
-        };
+        let vocab_r = GPE::build_vocab_r(&vocab, &Vec::new(), merge_offset)
+            .unwrap_or_else(|_| HashMap::new());
 
         GPE {
             unk_token,
@@ -111,11 +104,7 @@ impl From<WordLevel> for GPE {
         let mut vocab = value.get_vocab().to_owned();
         let new_id = vocab.len() as u32;
         vocab.entry(value.unk_token).or_insert(new_id);
-        if let Err(e) = obj.with_vocab_and_merges(vocab, Vec::new()) {
-            // The WordLevel vocab produced by huggingface should be self-consistent; log instead
-            // of panicking if corrupted input is provided from Python.
-            tracing::warn!("failed to hydrate GPE from WordLevel: {e}");
-        }
+        let _ = obj.with_vocab_and_merges(vocab, Vec::new());
         obj
     }
 }
@@ -131,10 +120,20 @@ impl GPE {
         for (pair, id) in merges.into_iter().zip(merge_offset..) {
             let left = vocab_r
                 .get(&pair.0)
-                .ok_or_else(|| format!("unknown token {}", pair.0))?;
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("unknown token {}", pair.0),
+                    )
+                })?;
             let right = vocab_r
                 .get(&pair.1)
-                .ok_or_else(|| format!("unknown token {}", pair.1))?;
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("unknown token {}", pair.1),
+                    )
+                })?;
             vocab_r.insert(id, format!("{}{}", left, right));
         }
         Ok(vocab_r)
@@ -160,7 +159,12 @@ impl GPE {
         let unk_token_id = *self
             .vocab
             .get(&self.unk_token)
-            .ok_or_else(|| "Unknown token missing from vocab".into())?;
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Unknown token missing from vocab",
+                )
+            })?;
 
         let tokens: Vec<Token> = splits
             .get_splits(OffsetReferential::Original, OffsetType::Byte)
@@ -187,7 +191,12 @@ impl GPE {
                     value: self
                         .vocab_r
                         .get(&id)
-                        .ok_or_else(|| "missing merged token".into())?
+                        .ok_or_else(|| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "missing merged token",
+                            )
+                        })?
                         .to_string(),
                     offsets: (tokens[ldx].offsets.0, tokens[rdx].offsets.1),
                 };
