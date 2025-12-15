@@ -409,7 +409,7 @@ impl GpeTrainer {
         }
 
         // Update Model
-        model.with_vocab_and_merges(vocab, merges);
+        model.with_vocab_and_merges(vocab, merges)?;
         Ok(self.special_tokens.clone())
     }
 }

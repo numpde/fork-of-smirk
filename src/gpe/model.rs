@@ -54,11 +54,25 @@ impl Default for GPE {
         let unk_token = "[UNK]".to_string();
         let mut vocab: HashMap<String, u32> = HashMap::new();
         vocab.insert(unk_token.to_owned(), 0);
-        GPEBuilder::default()
-            .unk_token(unk_token)
-            .vocab(vocab)
-            .build()
-            .unwrap()
+        let merge_offset = 1 + *vocab.values().max().unwrap_or(&0);
+        let vocab_r = match GPE::build_vocab_r(&vocab, &Vec::new(), merge_offset) {
+            Ok(v) => v,
+            Err(e) => {
+                // Building vocab_r from the static default vocab should never fail; fall back to
+                // an empty reverse vocab to avoid panicking in Python-facing code.
+                tracing::warn!("failed to build default vocab_r: {e}");
+                HashMap::new()
+            }
+        };
+
+        GPE {
+            unk_token,
+            tokenize: SmirkPreTokenizer::default(),
+            vocab,
+            merges: Vec::new(),
+            merge_offset,
+            vocab_r,
+        }
     }
 }
 
@@ -97,7 +111,11 @@ impl From<WordLevel> for GPE {
         let mut vocab = value.get_vocab().to_owned();
         let new_id = vocab.len() as u32;
         vocab.entry(value.unk_token).or_insert(new_id);
-        obj.with_vocab_and_merges(vocab, Vec::new());
+        if let Err(e) = obj.with_vocab_and_merges(vocab, Vec::new()) {
+            // The WordLevel vocab produced by huggingface should be self-consistent; log instead
+            // of panicking if corrupted input is provided from Python.
+            tracing::warn!("failed to hydrate GPE from WordLevel: {e}");
+        }
         obj
     }
 }
@@ -122,11 +140,16 @@ impl GPE {
         Ok(vocab_r)
     }
 
-    pub fn with_vocab_and_merges(&mut self, vocab: HashMap<String, u32>, merges: Vec<(u32, u32)>) {
+    pub fn with_vocab_and_merges(
+        &mut self,
+        vocab: HashMap<String, u32>,
+        merges: Vec<(u32, u32)>,
+    ) -> Result<()> {
         self.vocab = vocab;
         self.merges = merges;
         self.merge_offset = 1 + *self.vocab.values().max().unwrap_or(&0);
-        self.vocab_r = GPE::build_vocab_r(&self.vocab, &self.merges, self.merge_offset).unwrap();
+        self.vocab_r = GPE::build_vocab_r(&self.vocab, &self.merges, self.merge_offset)?;
+        Ok(())
     }
 
     fn tokenize_glyphs(&self, sequence: &str) -> Result<Vec<Token>> {
@@ -137,7 +160,7 @@ impl GPE {
         let unk_token_id = *self
             .vocab
             .get(&self.unk_token)
-            .expect("Unknown Token not in vocab");
+            .ok_or_else(|| "Unknown token missing from vocab".into())?;
 
         let tokens: Vec<Token> = splits
             .get_splits(OffsetReferential::Original, OffsetType::Byte)
@@ -161,7 +184,11 @@ impl GPE {
             if cur_pair == pair {
                 tokens[ldx] = Token {
                     id,
-                    value: self.vocab_r.get(&id).unwrap().to_string(),
+                    value: self
+                        .vocab_r
+                        .get(&id)
+                        .ok_or_else(|| "missing merged token".into())?
+                        .to_string(),
                     offsets: (tokens[ldx].offsets.0, tokens[rdx].offsets.1),
                 };
             } else {
@@ -196,8 +223,8 @@ impl Model for GPE {
             None => "gpe.json".to_string(),
         };
         let model_file = folder.join(name);
-        let fid = File::open(&model_file).unwrap();
-        let _ = serde_json::to_writer(fid, self);
+        let fid = File::create(&model_file)?;
+        serde_json::to_writer(fid, self)?;
         Ok(vec![model_file])
     }
 
@@ -332,16 +359,20 @@ mod test {
     #[test]
     fn test_tokenize_glyphs() {
         let mut model = GPE::default();
-        model.with_vocab_and_merges(
-            HashMap::from([
-                (model.unk_token.to_owned(), 0),
-                ("Co".to_string(), 1),
-                ("C".to_string(), 2),
-                ("o".to_string(), 3),
-                ("[".to_string(), 4),
-                ("]".to_string(), 5),
-            ]),
-            [].to_vec(),
+        assert!(
+            model
+                .with_vocab_and_merges(
+                    HashMap::from([
+                        (model.unk_token.to_owned(), 0),
+                        ("Co".to_string(), 1),
+                        ("C".to_string(), 2),
+                        ("o".to_string(), 3),
+                        ("[".to_string(), 4),
+                        ("]".to_string(), 5),
+                    ]),
+                    [].to_vec(),
+                )
+                .is_ok()
         );
         assert_eq!(model.get_vocab_size(), 6);
         assert_eq!(
@@ -409,16 +440,20 @@ mod test {
     #[test]
     fn test_untrained() {
         let mut model = GPE::default();
-        model.with_vocab_and_merges(
-            HashMap::from([
-                ("C".to_string(), 0),
-                ("o".to_string(), 1),
-                ("[".to_string(), 2),
-                ("]".to_string(), 3),
-                ("Co".to_string(), 4),
-                (model.unk_token.to_owned(), 5),
-            ]),
-            [].to_vec(),
+        assert!(
+            model
+                .with_vocab_and_merges(
+                    HashMap::from([
+                        ("C".to_string(), 0),
+                        ("o".to_string(), 1),
+                        ("[".to_string(), 2),
+                        ("]".to_string(), 3),
+                        ("Co".to_string(), 4),
+                        (model.unk_token.to_owned(), 5),
+                    ]),
+                    [].to_vec(),
+                )
+                .is_ok()
         );
         check_tokenize(&model, "Co", ["C", "o"].to_vec(), [0, 1].to_vec());
         check_tokenize(
@@ -438,16 +473,20 @@ mod test {
     #[test]
     fn test_merges() {
         let mut model = GPE::default();
-        model.with_vocab_and_merges(
-            HashMap::from([
-                ("C".to_string(), 0),
-                ("o".to_string(), 1),
-                ("[".to_string(), 2),
-                ("]".to_string(), 3),
-                ("Co".to_string(), 4), // Cobalt
-                (model.unk_token.to_owned(), 5),
-            ]),
-            [(0, 1)].to_vec(),
+        assert!(
+            model
+                .with_vocab_and_merges(
+                    HashMap::from([
+                        ("C".to_string(), 0),
+                        ("o".to_string(), 1),
+                        ("[".to_string(), 2),
+                        ("]".to_string(), 3),
+                        ("Co".to_string(), 4), // Cobalt
+                        (model.unk_token.to_owned(), 5),
+                    ]),
+                    [(0, 1)].to_vec(),
+                )
+                .is_ok()
         );
         assert_eq!(model.get_vocab_size(), 7);
         println!("vocab: {:?}", model.vocab.to_owned());
