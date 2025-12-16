@@ -12,7 +12,7 @@ use regex::Regex;
 use tokenizers::decoders::fuse::Fuse;
 use tokenizers::models::wordlevel::WordLevel;
 use tokenizers::processors::template::{Template, TemplateProcessing};
-use tokenizers::{self, normalizers, DecoderWrapper, Model, NormalizerWrapper};
+use tokenizers::{self, normalizers, DecoderWrapper, NormalizerWrapper};
 use tokenizers::{
     AddedToken, EncodeInput, OffsetReferential, OffsetType, PaddingDirection, PaddingParams,
     PaddingStrategy, PostProcessorWrapper, PreTokenizedString, PreTokenizer, TokenizerBuilder,
@@ -228,17 +228,7 @@ impl SmirkTokenizer {
 
     #[pyo3(signature = (with_added_tokens=true))]
     fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
-        let model = self.tokenizer.get_model();
-        let mut vocab_size = model.get_vocab_size();
-        if with_added_tokens {
-            // Count the number of added tokens not already included in the model's vocab
-            for (id, _) in self.tokenizer.get_added_tokens_decoder().iter() {
-                if model.id_to_token(*id).is_none() {
-                    vocab_size += 1;
-                }
-            }
-        }
-        vocab_size
+        self.tokenizer.get_vocab_size(with_added_tokens)
     }
 
     #[pyo3(signature = (with_added_tokens=true))]
