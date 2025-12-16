@@ -244,11 +244,11 @@ impl SmirkTokenizer {
         added
     }
 
-    #[pyo3(signature = (input, with_added_tokens=true))]
-    fn tokenize(&self, input: String, with_added_tokens: bool) -> PyResult<Vec<String>> {
+    #[pyo3(signature = (input, add_special_tokens=true))]
+    fn tokenize(&self, input: String, add_special_tokens: bool) -> PyResult<Vec<String>> {
         Ok(
             self.tokenizer
-                .encode(input, with_added_tokens)
+                .encode(input, add_special_tokens)
                 .map_err(|e| map_tok_err("tokenize", e))?
                 .get_tokens()
                 .to_vec(),
