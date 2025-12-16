@@ -15,21 +15,17 @@ running probes in fresh subprocesses lets us reliably classify outcomes:
 
 from __future__ import annotations
 
-import importlib
-import importlib.machinery
 import os
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-
 _CANDIDATE_MODULES = ("smirk.smirk", "smirk._smirk", "smirk")
 _CANDIDATE_CLASSES = ("SmirkTokenizer", "SmirkTokenizerFast", "Tokenizer")
 
 _PANIC_EXC_TYPES = {"PanicException", "SystemError"}
 _PANIC_MARKERS = ("panicked at", "panicexception", "rust panic", "stack backtrace:")
-
 
 _SNIPPET_TEMPLATE = r"""
 import importlib
