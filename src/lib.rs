@@ -1,5 +1,6 @@
 mod gpe;
 mod pre_tokenizers;
+mod pyerr;
 mod tokenizer;
 mod wrapper;
 
