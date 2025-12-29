@@ -1,0 +1,74 @@
+# .github/workflows/release-wheels.yml
+name: release-wheels
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wheels:
+    name: wheels (${{ matrix.os }} cp312)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-13, macos-14 ]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Linux: maturin-action builds in a manylinux container; select python3.12 explicitly.
+      - name: Build wheel (linux cp312)
+        if: runner.os == 'Linux'
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist -i python3.12
+          manylinux: auto
+
+      # macOS/Windows: use host python from setup-python.
+      - name: Build wheel (host cp312)
+        if: runner.os != 'Linux'
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist -i python
+          manylinux: auto
+
+      - name: Smoke test wheel
+        run: |
+          python -m pip install -U pip
+          python -m pip install dist/*.whl
+          python -c "import smirk; print('import ok')"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-cp312
+          path: dist/*.whl
+
+  release:
+    name: upload wheels to GitHub Release
+    needs: wheels
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attach wheels to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.whl
