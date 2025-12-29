@@ -5,6 +5,7 @@ dynamic = ["version", "readme", "license"]
 authors = [
     { name="Alexius Wadell", email="awadell@umich.edu" },
     { name="Anoushka Bhutani" },
+    { name="RA" },
 ]
 classifiers = [
     "Programming Language :: Rust",

@@ -1,12 +1,13 @@
 [package]
 name = "smirk"
-version = "0.2.0-dev"
-edition = "2021"
+version = "0.2.1-dev"
+edition = "2024"
 license = "Apache-2.0"
 description = "A chemically complete tokenizer for OpenSMILES"
 authors = [
     "Alexius Wadell <awadell@umich.edu>",
     "Anoushka Bhutani",
+    "RA",
 ]
 readme = "README.md"
 repository = "https://github.com/BattModels/smirk"
