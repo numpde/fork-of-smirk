@@ -10,7 +10,7 @@ authors = [
     "RA",
 ]
 readme = "README.md"
-repository = "https://github.com/BattModels/smirk"
+repository = "https://github.com/numpde/fork-of-smirk/"
 homepage = "https://eeg.engin.umich.edu/smirk"
 
 [lib]
