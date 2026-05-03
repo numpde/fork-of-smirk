@@ -3,8 +3,8 @@ use crate::pre_tokenizers::SmirkPreTokenizer;
 use super::GpeTrainer;
 use derive_builder::Builder;
 use serde::{
-    de::{MapAccess, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
+    de::{MapAccess, Visitor},
 };
 use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
@@ -118,22 +118,18 @@ impl GPE {
         let mut vocab_r: HashMap<u32, String> =
             vocab.iter().map(|(k, v)| (*v, k.to_owned())).collect();
         for (pair, id) in merges.into_iter().zip(merge_offset..) {
-            let left = vocab_r
-                .get(&pair.0)
-                .ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("unknown token {}", pair.0),
-                    )
-                })?;
-            let right = vocab_r
-                .get(&pair.1)
-                .ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("unknown token {}", pair.1),
-                    )
-                })?;
+            let left = vocab_r.get(&pair.0).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("unknown token {}", pair.0),
+                )
+            })?;
+            let right = vocab_r.get(&pair.1).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("unknown token {}", pair.1),
+                )
+            })?;
             vocab_r.insert(id, format!("{}{}", left, right));
         }
         Ok(vocab_r)
@@ -156,15 +152,12 @@ impl GPE {
         let mut splits = PreTokenizedString::from(sequence);
         let _ = self.tokenize.pre_tokenize(&mut splits)?;
 
-        let unk_token_id = *self
-            .vocab
-            .get(&self.unk_token)
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Unknown token missing from vocab",
-                )
-            })?;
+        let unk_token_id = *self.vocab.get(&self.unk_token).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Unknown token missing from vocab",
+            )
+        })?;
 
         let tokens: Vec<Token> = splits
             .get_splits(OffsetReferential::Original, OffsetType::Byte)
@@ -258,13 +251,18 @@ impl Model for GPE {
 
     // Accessors
     fn get_vocab(&self) -> HashMap<String, u32> {
-        self.vocab.to_owned()
+        self.vocab_r
+            .iter()
+            .map(|(id, token)| (token.to_owned(), *id))
+            .collect()
     }
     fn get_vocab_size(&self) -> usize {
         self.vocab.len() + self.merges.len()
     }
     fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.vocab.get(token).copied()
+        self.vocab_r
+            .iter()
+            .find_map(|(id, value)| (value == token).then_some(*id))
     }
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
@@ -325,7 +323,7 @@ impl<'de> Visitor<'de> for GPEVisitor {
                         return Err(serde::de::Error::invalid_value(
                             serde::de::Unexpected::Str(u),
                             &"GPE",
-                        ))
+                        ));
                     }
                 },
                 _ => {}

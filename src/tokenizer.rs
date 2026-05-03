@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::gpe::{GpeTrainer, GPE};
-use crate::pre_tokenizers::{split_structure, SmirkPreTokenizer};
+use crate::gpe::{GPE, GpeTrainer};
+use crate::pre_tokenizers::{SmirkPreTokenizer, split_structure};
 use crate::pyerr::{io_err, map_tok_err, runtime_err, type_err, value_err};
 use crate::wrapper::{ModelWrapper, PreTokenizerWrapper, TrainerWrapper};
 use pyo3::exceptions::PyValueError;
@@ -12,7 +12,7 @@ use regex::Regex;
 use tokenizers::decoders::fuse::Fuse;
 use tokenizers::models::wordlevel::WordLevel;
 use tokenizers::processors::template::{Template, TemplateProcessing};
-use tokenizers::{self, normalizers, DecoderWrapper, NormalizerWrapper};
+use tokenizers::{self, DecoderWrapper, NormalizerWrapper, normalizers};
 use tokenizers::{
     AddedToken, EncodeInput, OffsetReferential, OffsetType, PaddingDirection, PaddingParams,
     PaddingStrategy, PostProcessorWrapper, PreTokenizedString, PreTokenizer, TokenizerBuilder,
@@ -43,8 +43,12 @@ impl SmirkTokenizer {
 
 fn normalizer() -> PyResult<normalizers::Sequence> {
     let steps: Vec<normalizers::NormalizerWrapper> = [
-        normalizers::Replace::new("++", "+2").map_err(|e| runtime_err("normalizer", e))?.into(),
-        normalizers::Replace::new("--", "-2").map_err(|e| runtime_err("normalizer", e))?.into(),
+        normalizers::Replace::new("++", "+2")
+            .map_err(|e| runtime_err("normalizer", e))?
+            .into(),
+        normalizers::Replace::new("--", "-2")
+            .map_err(|e| runtime_err("normalizer", e))?
+            .into(),
         normalizers::Strip::new(true, true).into(),
     ]
     .to_vec();
@@ -77,8 +81,7 @@ impl SmirkTokenizer {
     }
 
     fn __getstate__(&self) -> PyResult<String> {
-        serde_json::to_string(&self.tokenizer)
-            .map_err(|e| value_err("__getstate__", e))
+        serde_json::to_string(&self.tokenizer).map_err(|e| value_err("__getstate__", e))
     }
 
     fn __setstate__(&mut self, state: &str) -> PyResult<()> {
@@ -88,8 +91,8 @@ impl SmirkTokenizer {
 
     #[staticmethod]
     fn from_vocab(file: &str) -> PyResult<Self> {
-        let model =
-            WordLevel::from_file(file, "[UNK]".to_string()).map_err(|e| map_tok_err("from_vocab", e))?;
+        let model = WordLevel::from_file(file, "[UNK]".to_string())
+            .map_err(|e| map_tok_err("from_vocab", e))?;
         let tokenizer = TokenizerBuilder::new()
             .with_model(model.into())
             .with_pre_tokenizer(Some(SmirkPreTokenizer::default().into()))
@@ -246,13 +249,12 @@ impl SmirkTokenizer {
 
     #[pyo3(signature = (input, add_special_tokens=true))]
     fn tokenize(&self, input: String, add_special_tokens: bool) -> PyResult<Vec<String>> {
-        Ok(
-            self.tokenizer
-                .encode(input, add_special_tokens)
-                .map_err(|e| map_tok_err("tokenize", e))?
-                .get_tokens()
-                .to_vec(),
-        )
+        Ok(self
+            .tokenizer
+            .encode(input, add_special_tokens)
+            .map_err(|e| map_tok_err("tokenize", e))?
+            .get_tokens()
+            .to_vec())
     }
 
     fn id_to_token(&self, index: u32) -> Option<String> {
@@ -472,12 +474,11 @@ impl SmirkTokenizer {
             PreTokenizerWrapper,
             PostProcessorWrapper,
             DecoderWrapper,
-        > = tok_builder
-            .build()
-            .map_err(|e| runtime_err("train", e))?;
+        > = tok_builder.build().map_err(|e| runtime_err("train", e))?;
 
         // Train tokenizer
-        let mut trainer: TrainerWrapper = builder.build().map_err(|e| runtime_err("train", e))?.into();
+        let mut trainer: TrainerWrapper =
+            builder.build().map_err(|e| runtime_err("train", e))?.into();
         let train_result = py.allow_threads(|| tokenizer.train_from_files(&mut trainer, files));
         train_result.map_err(|e| {
             if let Some(io) = e.downcast_ref::<std::io::Error>() {

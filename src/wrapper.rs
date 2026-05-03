@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tokenizers::tokenizer::{Model, PreTokenizedString, PreTokenizer, Result, Trainer};
 
-use crate::gpe::{GpeTrainer, GPE};
+use crate::gpe::{GPE, GpeTrainer};
 use crate::pre_tokenizers::SmirkPreTokenizer;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]

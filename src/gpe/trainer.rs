@@ -467,7 +467,7 @@ mod tests {
     use std::path::PathBuf;
     use tokenizers::Model;
     use tokenizers::{
-        normalizers::Strip, DecoderWrapper, PostProcessorWrapper, TokenizerBuilder, TokenizerImpl,
+        DecoderWrapper, PostProcessorWrapper, TokenizerBuilder, TokenizerImpl, normalizers::Strip,
     };
 
     #[test]
@@ -579,8 +579,10 @@ mod tests {
         let test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test/smiles.txt");
         let files: Vec<String> = vec![test_file.to_string_lossy().into()];
         let _ = tokenizer.train_from_files(&mut trainer, files).unwrap();
-        assert!(tokenizer
-            .get_vocab(true)
-            .contains_key(&tokenizer.get_model().unk_token))
+        assert!(
+            tokenizer
+                .get_vocab(true)
+                .contains_key(&tokenizer.get_model().unk_token)
+        )
     }
 }

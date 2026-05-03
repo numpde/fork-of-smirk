@@ -1,8 +1,8 @@
 mod smirk;
 mod split_smiles;
 
-use tokenizers::pre_tokenizers::split::{Split, SplitPattern};
 use tokenizers::SplitDelimiterBehavior;
+use tokenizers::pre_tokenizers::split::{Split, SplitPattern};
 
 pub use smirk::SmirkPreTokenizer;
 
@@ -14,9 +14,9 @@ pub fn split_structure() -> Split {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use tokenizers::PreTokenizer;
     use tokenizers::tokenizer::PreTokenizedString;
     use tokenizers::tokenizer::{OffsetReferential, OffsetType};
-    use tokenizers::PreTokenizer;
 
     fn get_splits(pretok: &Split, text: &str) -> Vec<String> {
         let mut pretokenized = PreTokenizedString::from(text);

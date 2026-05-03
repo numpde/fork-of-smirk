@@ -1,7 +1,7 @@
 use std::io;
 
-use pyo3::exceptions::{PyIOError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::PyErr;
+use pyo3::exceptions::{PyIOError, PyRuntimeError, PyTypeError, PyValueError};
 use tokenizers::Error as TokenizerError;
 
 pub fn value_err(ctx: &str, msg: impl std::fmt::Display) -> PyErr {

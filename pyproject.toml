@@ -28,10 +28,12 @@ dev = [
     "pytest~=8.3",
     "parameterized==0.9.0",
     "ruff~=0.9.4",
-    "torch~=2.0",
     "numpy~=2.0",
     "pre-commit~=4.1.0",
     "maturin~=1.7",
+]
+torch = [
+    "torch~=2.0",
 ]
 docs = [
     "furo==2024.8.6",
@@ -54,4 +56,4 @@ requires = ["maturin~=1.7"]
 
 [tool.maturin]
 python-source = "python"
-include = [ "./python/smirk/vocab_smiles.json", "./python/smirk/vocab_selfies.json" ]
+include = [ "python/smirk/vocab_smiles.json", "python/smirk/vocab_selfies.json" ]

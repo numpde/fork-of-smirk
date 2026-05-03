@@ -8,39 +8,50 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   wheels:
-    name: wheels (${{ matrix.os }} cp312)
+    name: wheels (${{ matrix.os }} cp${{ matrix.python-version-no-dot }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        python-version:
+          - "3.11"
+          - "3.12"
+          - "3.13"
         os:
           - ubuntu-latest
           - windows-latest
           - macos-15-intel  # x86_64
           - macos-15        # arm64
+        include:
+          - python-version: "3.11"
+            python-version-no-dot: "311"
+          - python-version: "3.12"
+            python-version-no-dot: "312"
+          - python-version: "3.13"
+            python-version-no-dot: "313"
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
-      # Linux: maturin-action builds in a manylinux container; select python3.12 explicitly.
-      - name: Build wheel (linux cp312)
+      # Linux: maturin-action builds in a manylinux container; select the requested CPython explicitly.
+      - name: Build wheel (linux cp${{ matrix.python-version-no-dot }})
         if: runner.os == 'Linux'
         uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --out dist -i python3.12
+          args: --release --out dist -i python${{ matrix.python-version }}
           manylinux: auto
 
       # macOS/Windows: use host python from setup-python.
-      - name: Build wheel (host cp312)
+      - name: Build wheel (host cp${{ matrix.python-version-no-dot }})
         if: runner.os != 'Linux'
         uses: PyO3/maturin-action@v1
         with:
@@ -72,7 +83,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}-cp312
+          name: wheels-${{ matrix.os }}-cp${{ matrix.python-version-no-dot }}
           path: dist/*.whl
 
   release:
@@ -80,6 +91,8 @@ jobs:
     needs: wheels
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/download-artifact@v4
