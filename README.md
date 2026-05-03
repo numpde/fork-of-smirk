@@ -1,5 +1,8 @@
 # Smirk: A Tokenizer for OpenSMILES
 
+This repository is a fork of Smirk. Visitors looking for the original project should see
+[BattModels/smirk](https://github.com/BattModels/smirk).
+
 <div align="center" display="flex" >
 
 ![GitHub License](https://img.shields.io/github/license/BattModels/smirk)
@@ -14,8 +17,13 @@ Installation is easy, and Smirk works out-of-the-box with the [HuggingFace](http
 Check our [documentation](https://eeg.engin.umich.edu/smirk) to see `smirk` in action, or [read the paper](https://arxiv.org/abs/2409.15370) to learn
 about tokenization for molecular foundation models.
 
-## Installation
+## Fork Runtime Changes
 
-```
-pip install smirk
-```
+This fork carries runtime and Rust-side changes that are not part of the original project:
+
+- Seed the default Rust `SmirkTokenizer` vocabulary with `[UNK]`.
+- Return `tokenizers::Result` from GPE vocabulary/merge updates.
+- Map Rust and tokenizer errors to normal Python exceptions.
+- Delegate vocabulary sizing to the underlying tokenizers API.
+- Use the `add_special_tokens` name consistently for tokenization.
+- Expose merged GPE tokens consistently through vocabulary and token-id lookup.
