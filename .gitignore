@@ -29,6 +29,7 @@ venv/
 .installed.cfg
 *.egg
 *.lock
+!Cargo.lock
 
 # Installer logs
 pip-log.txt
@@ -71,6 +72,3 @@ docs/_build/
 
 # Pyenv
 .python-version
-
-# Cargo
-Cargo.lock
