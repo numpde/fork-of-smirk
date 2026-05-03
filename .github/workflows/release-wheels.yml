@@ -35,9 +35,9 @@ jobs:
             python-version-no-dot: "313"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -81,7 +81,7 @@ jobs:
           python -m pip install $wheel
           python -c "import smirk; print('import ok')"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}-cp${{ matrix.python-version-no-dot }}
           path: dist/*.whl
@@ -95,13 +95,13 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: wheels-*
           path: dist
           merge-multiple: true
 
       - name: Attach wheels to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*.whl
