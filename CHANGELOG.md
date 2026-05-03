@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased](https://github.com/BattModels/smirk)
 
+## [v0.2.2](https://github.com/numpde/fork-of-smirk/tree/v0.2.2) - 2026-05-03
+
+### Added
+
+- Added GitHub Actions CI for Rust checks and Python tests on CPython 3.11, 3.12, and 3.13.
+- Added release wheel builds for CPython 3.11 and 3.13 alongside 3.12.
+
+### Changed
+
+- Moved `torch` into an opt-in dependency group for lighter default test environments.
+- Tracked `Cargo.lock` so CI uses the locked Rust dependency graph.
+
+### Fixed
+
+- Fixed GPE vocabulary lookup/reporting so merged tokens are included consistently.
+- Normalized maturin include paths for packaged vocabulary JSON files.
+- Scoped GitHub release write permissions to the release upload job.
+
 ### Added
 
 - Started a changelog ([#2](https://github.com/BattModels/smirk/pull/2))
